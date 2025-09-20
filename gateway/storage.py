@@ -6,10 +6,10 @@ import decimal
 import constants
 
 class S3EventStorageGateWay(object):
-    def __init__(self):
+    def __init__(self, bucket=None):
         self.region = constants.REGION_NAME
         self.s3_event_endpoint = constants.S3_EVENT_ENDPOINT
-        self.bucket = constants.S3_EVENT_BUCKET
+        self.bucket = bucket or constants.S3_EVENT_BUCKET
         self.s3 = boto3.client(
             's3',
             region_name=self.region,
@@ -25,6 +25,14 @@ class S3EventStorageGateWay(object):
         )
         return key
 
+    def upload_file(self, file_path: str, key: str):
+        """
+        Uploads a file from a local file path to S3.
+        """
+        try:
+            self.s3.upload_file(file_path, self.bucket, key)
+        except Exception as e:
+            raise # Re-raise the exception to fail the Airflow task
 
 class DecimalEncoder(json.JSONEncoder):
     """
