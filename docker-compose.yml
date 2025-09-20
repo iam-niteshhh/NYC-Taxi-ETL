@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  airflow-webserver:
+    image: apache/airflow:2.7.2
+    entrypoint: >
+      /bin/bash -c "
+      while ! pg_isready -h postgres --quiet; do
+        sleep 1;
+      done;
+      airflow db init &&  # Initialize the Airflow metadata database
+      airflow db upgrade &&  # Ensure the database is up-to-date
+      airflow users create --username airflow --password airflow --firstname airflow --lastname airflow --role Admin --email airflow@example.com &&  # Create an admin user
+      airflow webserver  # Start the Airflow webserver
+      "
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/opt/airflow  # Mount the entire project folder (everything)
+      - ./config:/root/config  # Mount the config directory
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - PYTHONPATH=/opt/airflow  # Ensure gateway and other modules are found by Python
+      - STAGE=${STAGE:-dev}  # Default to dev if STAGE is not set
+      - CONFIG_FILE=/root/config/config.${STAGE}.yml  # Dynamically load the config based on the STAGE environment variable
+
+  airflow-scheduler:
+    image: apache/airflow:2.7.2
+    entrypoint: >
+      /bin/bash -c "
+      while ! pg_isready -h postgres --quiet; do
+        sleep 1;
+      done;
+      airflow db init &&  # Initialize the Airflow metadata database (same as webserver)
+      airflow db upgrade &&  # Ensure the database is up-to-date
+      airflow scheduler  # Start the Airflow scheduler
+      "
+    volumes:
+      - .:/opt/airflow  # Mount the entire project folder (everything)
+      - ./config:/root/config  # Mount the config directory
+    depends_on:
+      - postgres
+      - airflow-webserver
+    environment:
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - PYTHONPATH=/opt/airflow  # Ensure gateway and other modules are found by Python
+      - STAGE=${STAGE:-dev}  # Default to dev if STAGE is not set
+      - CONFIG_FILE=/root/config/config.${STAGE}.yml  # Dynamically load the config based on the STAGE environment variable
