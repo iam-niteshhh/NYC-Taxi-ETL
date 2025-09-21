@@ -17,6 +17,11 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
 
+def s3_bucket():
+    s3_gateway = S3GateWay()
+    s3_gateway.create_bucket(start_up=True)
+
+
 def _download_data(url: str, local_path: str):
     """Wrapper function"""
 
@@ -30,20 +35,19 @@ def _upload_data(ti):
     # Pull the local path from the download task's XCom
     local_path = ti.xcom_pull(task_ids="download_data_from_url")
     if not local_path or not os.path.exists(local_path):
-        raise AirflowFailException(
-            "Downloaded file not found or path is missing."
-        )
-
+        raise AirflowFailException("Downloaded file not found or path is missing.")
+    LOGGER.info(f"local path {local_path}")
     # Extract the file name from the local path
-    file_name = os.path.basename(local_path)
-    # Construct the S3 key dynamically using the prefix and file name
+    file_names = [f for f in os.listdir(local_path)]
+    LOGGER.info(f"file name: {file_names}")
 
     uploader = S3GateWay()
-    uploader.upload_file(
-        file_path=local_path,
-        folder=constants.S3_RAW_FOLDER_NAME,
-        key=file_name,
-    )
+    for file in file_names:
+        file_path = os.path.join(local_path, file)
+        uploader.upload_file(
+            file_path=file_path,
+            upload_to=constants.S3_RAW_FOLDER_NAME,
+        )
 
 
 with DAG(
@@ -55,6 +59,9 @@ with DAG(
 ) as dag:
     LOGGER.info("Starting the DAG")
 
+    bucket_create_task = PythonOperator(
+        task_id="s3_bucket_create", python_callable=s3_bucket
+    )
     download_task = PythonOperator(
         task_id="download_data_from_url",
         python_callable=_download_data,
@@ -70,4 +77,4 @@ with DAG(
     )
 
     # Set the sequential task dependency
-    download_task >> upload_task
+    bucket_create_task >> download_task >> upload_task

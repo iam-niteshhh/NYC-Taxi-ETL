@@ -19,9 +19,7 @@ class TaxiDataGateway(object):
 
     def download_file(self):
         try:
-            LOGGER.info(
-                f"Starting download from {self.url} to {self.local_path}"
-            )
+            LOGGER.info(f"Starting download from {self.url} to {self.local_path}")
             os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
 
             response = requests.get(self.url, stream=True)

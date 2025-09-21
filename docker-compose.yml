@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   postgres:
+    container_name: nycetl-postgres
     image: postgres:13
     environment:
       - POSTGRES_USER=airflow
@@ -9,59 +10,111 @@ services:
       - POSTGRES_DB=airflow
     ports:
       - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
       retries: 5
 
   airflow-webserver:
+    container_name: nycetl-airflow-webserver
     image: apache/airflow:2.7.2
-    entrypoint: >
-      /bin/bash -c "
-      while ! pg_isready -h postgres --quiet; do
-        sleep 1;
-      done;
-      airflow db init &&  # Initialize the Airflow metadata database
-      airflow db upgrade &&  # Ensure the database is up-to-date
-      airflow users create --username airflow --password airflow --firstname airflow --lastname airflow --role Admin --email airflow@example.com &&  # Create an admin user
-      airflow webserver  # Start the Airflow webserver
-      "
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -x
+        echo "Waiting for PostgreSQL to be ready"
+        while ! pg_isready -h postgres --quiet; do
+          sleep 1;
+        done
+        echo "Initializing the database"
+        airflow db init
+        echo "Upgrading the database"
+        airflow db upgrade
+        echo "Creating admin user if not exists"
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --email admin@example.com \
+          --role Admin \
+          --password admin || true
+        echo "Starting Airflow webserver"
+        airflow webserver
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
-      - .:/opt/airflow  # Mount the entire project folder (everything)
-      - ./config:/root/config  # Mount the config directory
+      - .:/opt/airflow
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      - PYTHONPATH=/opt/airflow  # Ensure gateway and other modules are found by Python
-      - STAGE=${STAGE:-dev}  # Default to dev if STAGE is not set
-      - CONFIG_FILE=/root/config/config.${STAGE}.yml  # Dynamically load the config based on the STAGE environment variable
+      - PYTHONPATH=/opt/airflow
+      - STAGE=dev
+      - CONFIG_FILE=/opt/airflow/config/config.${STAGE:-dev}.yml
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - S3_ENDPOINT_URL=http://localstack:4566
+    restart: always
 
   airflow-scheduler:
+    container_name: nycetl-airflow-scheduler
     image: apache/airflow:2.7.2
-    entrypoint: >
-      /bin/bash -c "
-      while ! pg_isready -h postgres --quiet; do
-        sleep 1;
-      done;
-      airflow db init &&  # Initialize the Airflow metadata database (same as webserver)
-      airflow db upgrade &&  # Ensure the database is up-to-date
-      airflow scheduler  # Start the Airflow scheduler
-      "
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -x
+        echo "Waiting for PostgreSQL to be ready"
+        while ! pg_isready -h postgres --quiet; do
+          sleep 1;
+        done
+        echo "Starting Airflow scheduler"
+        airflow scheduler
     volumes:
-      - .:/opt/airflow  # Mount the entire project folder (everything)
-      - ./config:/root/config  # Mount the config directory
+      - .:/opt/airflow
     depends_on:
-      - postgres
-      - airflow-webserver
+      postgres:
+        condition: service_healthy
     environment:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      - PYTHONPATH=/opt/airflow  # Ensure gateway and other modules are found by Python
-      - STAGE=${STAGE:-dev}  # Default to dev if STAGE is not set
-      - CONFIG_FILE=/root/config/config.${STAGE}.yml  # Dynamically load the config based on the STAGE environment variable
+      - PYTHONPATH=/opt/airflow
+      - STAGE=dev
+      - CONFIG_FILE=/opt/airflow/config/config.${STAGE:-dev}.yml
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - S3_ENDPOINT_URL=http://localstack:4566
+    restart: always
+
+  localstack:
+    container_name: nycetl-localstack
+    image: localstack/localstack:latest
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - SERVICES=s3
+      - DEBUG=1
+      - TMPDIR=/var/tmp
+      - DATA_DIR=/tmp/localstack/data  # This is the default data directory
+    ports:
+      - "4566:4566"
+      - "4510-4550:4510-4550"
+    volumes:
+      - ./localstack_data:/var/lib/localstack   # Localstack state/config persistence
+      - ./s3_local:/tmp/localstack/data          # <-- Persist S3 data here on host
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always
+
+volumes:
+  postgres_data:

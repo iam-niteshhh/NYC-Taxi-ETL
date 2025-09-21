@@ -22,12 +22,8 @@ class DataTransformer(object):
         for file_name, file_content in files.items():
             LOGGER.info(f"Processing file: {file_name}")
             df = pd.read_parquet(file_content)
-            df["tpep_pickup_datetime"] = pd.to_datetime(
-                df["tpep_pickup_datetime"]
-            )
-            df["tpep_dropoff_datetime"] = pd.to_datetime(
-                df["tpep_dropoff_datetime"]
-            )
+            df["tpep_pickup_datetime"] = pd.to_datetime(df["tpep_pickup_datetime"])
+            df["tpep_dropoff_datetime"] = pd.to_datetime(df["tpep_dropoff_datetime"])
             df = df[(df["passenger_count"] > 0) & (df["trip_distance"] > 0)]
             df["trip_duration_minutes"] = (
                 df["tpep_dropoff_datetime"] - df["tpep_pickup_datetime"]

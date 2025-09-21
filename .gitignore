@@ -44,3 +44,7 @@ venv/
 
 # Windows system files
 Thumbs.db
+
+postgres_data/
+localstack_data/
+data/

@@ -1,5 +1,5 @@
 stage: dev
 region: localhost
 dynamoEndpoint: http://localhost:4568
-s3EventBucketName: dev-nyc-etl
-s3EventEndpoint: http://localhost:4567
+s3EventBucketName: dev-event-storage
+s3EventEndpoint: http://localstack:4566
