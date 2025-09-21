@@ -6,6 +6,7 @@ import logging
 
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.dagrun_operator import TriggerDagRunOperator
 from airflow.exceptions import AirflowFailException
 
 from gateway.data_gateway import TaxiDataGateway
@@ -46,7 +47,7 @@ def _upload_data(ti):
         file_path = os.path.join(local_path, file)
         uploader.upload_file(
             file_path=file_path,
-            upload_to=constants.S3_RAW_FOLDER_NAME,
+            upload_to=constants.S3_RAW_FOLDER_NAME + file,
         )
 
 
@@ -76,5 +77,10 @@ with DAG(
         python_callable=_upload_data,
     )
 
+    trigger_next_dag = TriggerDagRunOperator(
+        task_id="trigger_next_dag",
+        trigger_dag_id="nyc_taxi_data_transformation",
+        dag=dag,
+    )
     # Set the sequential task dependency
-    bucket_create_task >> download_task >> upload_task
+    bucket_create_task >> download_task >> upload_task >> trigger_next_dag

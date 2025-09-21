@@ -91,16 +91,18 @@ class S3GateWay(object):
         :return: dict which contains inventory file name as key and value as inventory file data
         """
         files = {}
-        objs = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=folder + "/").get(
+        objs = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=folder).get(
             "Contents", []
         )
-
+        print("OBS", objs)
         if not objs:
             LOGGER.info("order status file not present")
             return files
 
         last_added_files = [
-            obj["Key"] for obj in objs if obj.get("Key") and obj.get("Size") > 0
+            obj["Key"]
+            for obj in objs
+            if obj.get("Key") and obj.get("Size") > 0 and obj.get("Key") != folder
         ]
 
         LOGGER.info("last_added_files - %s", last_added_files)
