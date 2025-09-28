@@ -21,3 +21,14 @@ FILE_MONTH = "2023-01"  # Example: January 2023
 FILE_NAME = (
     f"{TAXI_TYPE}_{FILE_MONTH}.parquet"  # We'll use Parquet for better performance
 )
+POSTGRES_TABLE_NAME = "clean_taxi_trips"
+# Define the table schema within the DAG for clarity
+TABLE_SCHEMA = [
+    {'name': 'trip_id', 'type': 'SERIAL', 'constraint': 'PRIMARY KEY'},
+    {'name': 'tpep_pickup_datetime', 'type': 'TIMESTAMP'},
+    {'name': 'tpep_dropoff_datetime', 'type': 'TIMESTAMP'},
+    {'name': 'passenger_count', 'type': 'INT'},
+    {'name': 'trip_distance', 'type': 'FLOAT'},
+    {'name': 'trip_duration_minutes', 'type': 'FLOAT'},
+    {'name': 'store_and_fwd_flag', 'type': 'VARCHAR(10)'},
+]

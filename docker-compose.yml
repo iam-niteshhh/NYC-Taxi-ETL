@@ -15,34 +15,12 @@ services:
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   airflow-webserver:
     container_name: nycetl-airflow-webserver
     image: apache/airflow:2.7.2
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        set -x
-        echo "Waiting for PostgreSQL to be ready"
-        while ! pg_isready -h postgres --quiet; do
-          sleep 1;
-        done
-        echo "Initializing the database"
-        airflow db init
-        echo "Upgrading the database"
-        airflow db upgrade
-        echo "Creating admin user if not exists"
-        airflow users create \
-          --username admin \
-          --firstname Admin \
-          --lastname User \
-          --email admin@example.com \
-          --role Admin \
-          --password admin || true
-        echo "Starting Airflow webserver"
-        airflow webserver
     ports:
       - "8081:8080"
     volumes:
@@ -53,30 +31,64 @@ services:
     environment:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       - PYTHONPATH=/opt/airflow
       - STAGE=dev
       - CONFIG_FILE=/opt/airflow/config/config.${STAGE:-dev}.yml
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
-      - S3_ENDPOINT_URL=http://localstack:4566
+      - AWS_ENDPOINT_URL=http://localstack:4566
     restart: always
-
-  airflow-scheduler:
-    container_name: nycetl-airflow-scheduler
-    image: apache/airflow:2.7.2
     entrypoint:
       - /bin/bash
       - -c
       - |
-        set -x
+        set -ex
         echo "Waiting for PostgreSQL to be ready"
-        while ! pg_isready -h postgres --quiet; do
-          sleep 1;
-        done
-        echo "Starting Airflow scheduler"
-        airflow scheduler
+        while ! pg_isready -h postgres --quiet; do sleep 1; done
+
+        # Migrate Airflow DB only if necessary
+        echo "Migrating Airflow DB"
+        airflow db upgrade
+
+        # Create admin user only if it doesn't exist
+        echo "Checking if Admin user exists"
+        if ! airflow users list | grep -q "admin"; then
+          echo "Creating admin user"
+          airflow users create \
+            --username admin \
+            --firstname Admin \
+            --lastname User \
+            --email admin@example.com \
+            --role Admin \
+            --password admin
+        else
+          echo "Admin user already exists."
+        fi
+
+        # Create default connections only if they don't exist
+        echo "Checking if default connections exist"
+        if ! airflow connections list | grep -q "postgres_default"; then
+          echo "Creating default Airflow connections"
+          airflow connections add 'postgres_default' \
+            --conn-type 'postgres' \
+            --conn-host 'postgres' \
+            --conn-schema 'airflow' \
+            --conn-login 'airflow' \
+            --conn-password 'airflow' \
+            --conn-port 5432
+        else
+          echo "Connection postgres_default already exists."
+        fi
+
+        # Start the Airflow webserver
+        echo "Starting Airflow webserver"
+        exec airflow webserver
+
+  airflow-scheduler:
+    container_name: nycetl-airflow-scheduler
+    image: apache/airflow:2.7.2
     volumes:
       - .:/opt/airflow
     depends_on:
@@ -85,15 +97,26 @@ services:
     environment:
       - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       - PYTHONPATH=/opt/airflow
       - STAGE=dev
       - CONFIG_FILE=/opt/airflow/config/config.${STAGE:-dev}.yml
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
-      - S3_ENDPOINT_URL=http://localstack:4566
+      - AWS_ENDPOINT_URL=http://localstack:4566
     restart: always
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -ex
+        echo "Waiting for PostgreSQL to be ready"
+        while ! pg_isready -h postgres --quiet; do sleep 1; done
+
+        # Start the Airflow scheduler
+        echo "Starting Airflow scheduler"
+        exec airflow scheduler
 
   localstack:
     container_name: nycetl-localstack
@@ -106,13 +129,13 @@ services:
       - SERVICES=s3
       - DEBUG=1
       - TMPDIR=/var/tmp
-      - DATA_DIR=/tmp/localstack/data  # This is the default data directory
+      - DATA_DIR=/tmp/localstack/data
     ports:
       - "4566:4566"
       - "4510-4550:4510-4550"
     volumes:
-      - ./localstack_data:/var/lib/localstack   # Localstack state/config persistence
-      - ./s3_local:/tmp/localstack/data          # <-- Persist S3 data here on host
+      - ./localstack_data:/var/lib/localstack
+      - ./s3_local:/tmp/localstack/data
       - /var/run/docker.sock:/var/run/docker.sock
     restart: always
 

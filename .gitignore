@@ -48,3 +48,4 @@ Thumbs.db
 postgres_data/
 localstack_data/
 data/
+redshift_data/
